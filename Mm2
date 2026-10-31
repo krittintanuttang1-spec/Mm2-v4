@@ -1,0 +1,397 @@
+-- ==========================================
+-- EXZ HUB (Rayfield UI - True Collision Fling & Fly Fix)
+-- ==========================================
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "EXZ HUB | Murder Mystery 2",
+   LoadingTitle = "EXZ HUB is Loading...",
+   LoadingSubtitle = "by EXZ",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Main & Movement", 4483362458)
+local CombatTab = Window:CreateTab("Combat & Troll", 4483362458)
+local SheriffTab = Window:CreateTab("Sheriff Features", 4483362458)
+local VisualTab = Window:CreateTab("Visuals (ESP & FOV)", 4483362458)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- ฟังก์ชันเช็คบทบาท MM2
+local function getRole(p)
+    if not p or not p.Character then return "Innocent" end
+    local backpack = p:FindFirstChild("Backpack")
+    local char = p.Character
+    local hasKnife = char:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife"))
+    local hasGun = char:FindFirstChild("Gun") or char:FindFirstChild("Revolver") or (backpack and (backpack:FindFirstChild("Gun") or backpack:FindFirstChild("Revolver")))
+    if hasKnife then return "Murderer"
+    elseif hasGun then return "Sheriff"
+    else return "Innocent" end
+end
+
+-- ==========================================
+-- 1. Main & Movement Tab (ระบบบินบังคับทิศทางลื่นไหล)
+-- ==========================================
+
+local flyEnabled = false
+local flySpeed = 50
+local flyConn
+local bv, bg
+
+MainTab:CreateSlider({
+   Name = "ความเร็วบิน (Fly Speed)",
+   Range = {10, 300},
+   Increment = 5,
+   CurrentValue = 50,
+   Callback = function(Value)
+      flySpeed = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "เปิด/ปิด บิน (Fly)",
+   CurrentValue = false,
+   Callback = function(Value)
+      flyEnabled = Value
+      pcall(function()
+          local char = LocalPlayer.Character
+          local hrp = char and char:FindFirstChild("HumanoidRootPart")
+          local hum = char and char:FindFirstChild("Humanoid")
+          if flyEnabled and hrp and hum then
+              hum.PlatformStand = true
+              bv = Instance.new("BodyVelocity")
+              bv.MaxForce = Vector3.new(99999, 99999, 99999)
+              bv.Velocity = Vector3.new(0, 0, 0)
+              bv.Parent = hrp
+              
+              bg = Instance.new("BodyGyro")
+              bg.MaxTorque = Vector3.new(99999, 99999, 99999)
+              bg.CFrame = hrp.CFrame
+              bg.Parent = hrp
+              
+              flyConn = RunService.RenderStepped:Connect(function()
+                  if flyEnabled and hrp and hum and hum.Health > 0 then
+                      bg.CFrame = Camera.CFrame
+                      local moveDir = Vector3.new(0, 0, 0)
+                      local camCF = Camera.CFrame
+                      
+                      if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                          moveDir = moveDir + camCF.LookVector
+                      end
+                      if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                          moveDir = moveDir - camCF.LookVector
+                      end
+                      if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                          moveDir = moveDir - camCF.RightVector
+                      end
+                      if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                          moveDir = moveDir + camCF.RightVector
+                      end
+                      
+                      bv.Velocity = moveDir * flySpeed
+                  else
+                      if hum then hum.PlatformStand = false end
+                      if bv then bv:Destroy() end
+                      if bg then bg:Destroy() end
+                      if flyConn then flyConn:Disconnect() end
+                  end
+              end)
+          else
+              if hum then hum.PlatformStand = false end
+              if bv then bv:Destroy() end
+              if bg then bg:Destroy() end
+              if flyConn then flyConn:Disconnect() end
+          end
+      end)
+   end,
+})
+
+-- ระบบปรับความเร็วเดิน (WalkSpeed)
+local speedVal = 16
+local walkspeedEnabled = false
+
+MainTab:CreateSlider({
+   Name = "ความเร็วเดิน (WalkSpeed)",
+   Range = {16, 200},
+   Increment = 1,
+   CurrentValue = 16,
+   Callback = function(Value)
+      speedVal = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "เปิด/ปิด วิ่งไว",
+   CurrentValue = false,
+   Callback = function(Value)
+      walkspeedEnabled = Value
+   end,
+})
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if walkspeedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = speedVal
+        elseif not walkspeedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        end
+    end)
+end)
+
+-- เดินทะลุกำแพง (Noclip)
+local noclip = false
+MainTab:CreateToggle({
+   Name = "เดินทะลุกำแพง (Noclip)",
+   CurrentValue = false,
+   Callback = function(Value)
+      noclip = Value
+   end,
+})
+
+RunService.Stepped:Connect(function()
+    pcall(function()
+        if noclip and LocalPlayer.Character then
+            for _, v in pairs(LocalPlayer.Character:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = false end
+            end
+        end
+    end)
+end)
+
+-- ==========================================
+-- 2. Combat & Troll Tab (Aimbot วงกลมกลางจอ, ดีดพุ่งชนกระเด็น)
+-- ==========================================
+
+local aimbot = false
+local fovRadius = 150
+
+local FOVDrawing = Drawing.new("Circle")
+FOVDrawing.Visible = false
+FOVDrawing.Radius = fovRadius
+FOVDrawing.Color = Color3.fromRGB(0, 200, 255)
+FOVDrawing.Thickness = 2
+FOVDrawing.Filled = false
+FOVDrawing.Transparency = 0.7
+FOVDrawing.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+VisualTab:CreateToggle({
+   Name = "เปิด/ปิด วงกลมกลางจอ (FOV)",
+   CurrentValue = false,
+   Callback = function(Value)
+      FOVDrawing.Visible = Value
+   end,
+})
+
+VisualTab:CreateSlider({
+   Name = "ขนาดวงกลม FOV",
+   Range = {50, 400},
+   Increment = 10,
+   CurrentValue = 150,
+   Callback = function(Value)
+      fovRadius = Value
+      FOVDrawing.Radius = Value
+   end,
+})
+
+CombatTab:CreateToggle({
+   Name = "Aimbot ล็อกหัวออโต้",
+   CurrentValue = false,
+   Callback = function(Value)
+      aimbot = Value
+   end,
+})
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        FOVDrawing.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        
+        if aimbot then
+            local target, shortest = nil, fovRadius
+            local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+            
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+                    local hum = p.Character:FindFirstChild("Humanoid")
+                    if hum and hum.Health > 0 then
+                        local pos, onScreen = Camera:WorldToViewportPoint(p.Character.Head.Position)
+                        if onScreen then
+                            local dist = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
+                            if dist < shortest then
+                                shortest = dist
+                                target = p
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if target and target.Character:FindFirstChild("Head") then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+            end
+        end
+    end)
+end)
+
+-- ระบบดีดแบบพุ่งชนตัวเป้าหมายโดยตรง (Collision Fling)
+local function collisionFling(roleName)
+    pcall(function()
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local myHum = myChar and myChar:FindFirstChild("Humanoid")
+        if not myRoot or not myHum then return end
+        
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                if getRole(p) == roleName then
+                    local targetRoot = p.Character.HumanoidRootPart
+                    myHum.PlatformStand = true
+                    
+                    local startTime = tick()
+                    local flingConnection
+                    flingConnection = RunService.RenderStepped:Connect(function()
+                        if tick() - startTime < 3 and targetRoot and myRoot then
+                            -- เอาตัวเราไปประกบชนและหมุนเหวี่ยงด้วยความเร็วสูงเพื่อดันเป้าหมายให้กระเด็นตกแมพ
+                            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 0)
+                            myRoot.Velocity = Vector3.new(30000, 30000, 30000)
+                            myRoot.RotVelocity = Vector3.new(99999, 99999, 99999)
+                        else
+                            myHum.PlatformStand = false
+                            myRoot.Velocity = Vector3.new(0, 0, 0)
+                            myRoot.RotVelocity = Vector3.new(0, 0, 0)
+                            flingConnection:Disconnect()
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+end
+
+CombatTab:CreateButton({
+   Name = "ดีดฆาตกรออกแมพ (พุ่งชนกระเด็น)",
+   Callback = function() collisionFling("Murderer") end,
+})
+
+CombatTab:CreateButton({
+   Name = "ดีดนายอำเภอออกแมพ (พุ่งชนกระเด็น)",
+   Callback = function() collisionFling("Sheriff") end,
+})
+
+-- ออโต้ฆ่าคน (วาร์ปเหยื่อมาข้างหน้า)
+local autoKill = false
+CombatTab:CreateToggle({
+   Name = "ออโต้ฆ่าคน (วาร์ปเหยื่อมาข้างหน้า)",
+   CurrentValue = false,
+   Callback = function(Value) autoKill = Value end,
+})
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        pcall(function()
+            if autoKill and getRole(LocalPlayer) == "Murderer" then
+                local myChar = LocalPlayer.Character
+                if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                            local hum = p.Character:FindFirstChild("Humanoid")
+                            if hum and hum.Health > 0 and getRole(p) ~= "Murderer" then
+                                p.Character.HumanoidRootPart.CFrame = myChar.HumanoidRootPart.CFrame + (myChar.HumanoidRootPart.CFrame.LookVector * 3)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ==========================================
+-- 3. Sheriff Tab (โหมดนายอำเภอ: ออโต้ฆ่าฆาตกร)
+-- ==========================================
+
+local autoShootMurderer = false
+SheriffTab:CreateToggle({
+   Name = "ออโต้ฆ่าฆาตกร (โหมดนายอำเภอ)",
+   CurrentValue = false,
+   Callback = function(Value)
+      autoShootMurderer = Value
+   end,
+})
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        pcall(function()
+            if autoShootMurderer and getRole(LocalPlayer) == "Sheriff" then
+                local myChar = LocalPlayer.Character
+                if myChar and (myChar:FindFirstChild("Gun") or myChar:FindFirstChild("Revolver") or LocalPlayer.Backpack:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Revolver")) then
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("Head") then
+                            if getRole(p) == "Murderer" then
+                                local hum = p.Character:FindFirstChild("Humanoid")
+                                if hum and hum.Health > 0 then
+                                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, p.Character.Head.Position)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ==========================================
+-- 4. Visuals Tab (ESP แยกสี)
+-- ==========================================
+local espOn = false
+VisualTab:CreateToggle({
+   Name = "ESP สีบทบาท (เขียว/แดง/ฟ้า)",
+   CurrentValue = false,
+   Callback = function(Value)
+      espOn = Value
+      for _, p in pairs(Players:GetPlayers()) do
+          if p.Character and p.Character:FindFirstChild("EXZ_ESP_BOX") then
+              p.Character.EXZ_ESP_BOX:Destroy()
+          end
+      end
+   end,
+})
+
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if espOn then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local char = p.Character
+                    local hl = char:FindFirstChild("EXZ_ESP_BOX")
+                    if not hl then
+                        hl = Instance.new("Highlight")
+                        hl.Name = "EXZ_ESP_BOX"
+                        hl.Parent = char
+                        hl.Adornee = char
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    end
+                    
+                    local role = getRole(p)
+                    if role == "Murderer" then
+                        hl.FillColor = Color3.fromRGB(255, 50, 50) -- แดง: ฆาตกร
+                    elseif role == "Sheriff" then
+                        hl.FillColor = Color3.fromRGB(0, 150, 255) -- ฟ้า: นายอำเภอ
+                    else
+                        hl.FillColor = Color3.fromRGB(50, 255, 50) -- เขียว: คนทั่วไป
+                    end
+                end
+            end
+        end
+    end)
+end)
+
+Rayfield:LoadConfiguration()
